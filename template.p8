@@ -1,243 +1,36 @@
 pico-8 cartridge // http://www.pico-8.com
 version 41
 __lua__
--- finlayball
+-- new shit
 -- by air
 
--- player
-p = {x=64, y=64}
-rad = 7
-accel = 0.5 -- upward thrust
--- animation
-coin_ticks=5
-sleep=0 -- in frames
--- general
-g = 0.2 -- gravity
-timer = 0
-start_coins=4
-coins = {}
-trail = {}
-sparks = {}
-splode = {}
-stain = {}
-state = "attract"
-midas = false
-paint = false
-
-function make_coin()
- local coin = {x=0, y=0, frame=0, step=0}
- coin.frame = flr(rnd(3))
- coin.step = flr(rnd(coin_ticks))
- coin.x = 5+flr(rnd(118))
- coin.y = 5+flr(rnd(118))
- return coin
+function _init()
+ update_funcs={}
+ update_funcs.attract=update_attract
+ draw_funcs={}
+ draw_funcs.attract=draw_attract
+ reset()
 end
 
-function make_splode(x,y)
- local splode = {frame=0, step=0}
- splode.col = 0 -- start black
- splode.x = x
- splode.y = y
- return splode
-end
-
-function spark(x,y,vx,vy,col,lifetime)
- if (not lifetime) lifetime=10
- local s = {}
- s.x=x s.y=y s.vx=vx s.vy=vy s.col=col
- s.age=0
- s.limit=lifetime
- s.px=x s.py=y -- previous
- add(sparks,s)
-end
-
-function reset_game()
- p = {x=64, y=64, vx=0, vy=0}
- timer = 0
- coins = {}
- trail = {}
- sparks = {}
- splode = {}
- stain = {}
- for c = 1,start_coins do
-  add(coins, make_coin())
- end
+function reset()
+ -- globals
+ timer=0
+ sleep=0
+ state="attract"
+ debug={}
 end
 -->8
 -- update
 function _update()
- if (sleep > 0) then
-  sleep -= 1
+ debug={}
+ if sleep>0 then
+  sleep-=1
  else
   update_funcs[state]()
  end
 end
 
 function update_attract()
- if (btnp(2)) then
-  reset_game()
-  state = "play"
- end
- if (btnp(4)) then
-  if (midas) then
-   midas = false
-   start_coins = 4
-  else
-   midas = true
-   start_coins = 500
-  end
- end
- if (btnp(5)) then
-  if (paint) then
-   paint = false
-  else
-   paint = true
-  end
- end
-end
-
-function update_gameover()
- if (btn(3)) then
-  reset_game()
-  state = "attract"
- end
-end
-
-function update_play()
- timer += 1
- -- store player trail
- store_trail()
- -- animate things
- foreach(sparks, update_spark)
- foreach(coins, update_coin)
- foreach(splode, update_splode)
- -- press buttons
- if (btn(0)) p.vx -= accel
- if (btn(1)) p.vx += accel
- if (btn(2)) then
-  p.vy -= accel
-  sfx(3)
-  for i=1,5 do
-   spark(p.x+(3-rnd(5)),p.y+7+rnd(2),0.5-rnd(1),2+rnd(2),2+flr(rnd(14)))
-  end
- end
- if (btn(3)) p.vy += accel
- 
- p.vy += g
- p.x += p.vx
- p.y += p.vy
-
- spawn()
- collide_walls()
- collide_coins()
- if (#coins == 0) state="gameover"
-end
-
-function update_coin(c)
- c.step += 1
- if (c.step == coin_ticks) then
-  c.step = 0;
-  c.frame += 1;
-  if (c.frame == 3) c.frame = 0
- end
-end
-
-function update_splode(s)
- s.step += 1
- if (s.step > 0) s.col = 7
- if (s.step > 5) then
-  del(splode, s)
-  local c = 8
-  while (c==8 or c==10 or c==2 or c==7) do
-   c=2+flr(rnd(14))
-  end
-  add(stain, {x=s.x, y=s.y, col=c})
- end
-end
-
-function update_spark(s)
- s.age += 1
- if (s.age == s.limit) then
-  del(sparks,s)
-  return
- end
- s.px = s.x -- previous
- s.py = s.y
- s.vy += g -- gravity
- s.vx *= 0.99 -- decay vx
- s.x += s.vx
- s.y += s.vy
-end
-
-function store_trail()
- add(trail, {x=p.x, y=p.y})
- if (#trail == 6) del(trail, trail[1])
-end
-
-function spawn()
- if (timer % 30 == 0) then
-  add(coins, make_coin())
- end 
-end
-
-function collide_coins()
- for coin in all(coins) do
-  -- 11 is rad + sprite_width/2
-  if closer_than(p, coin, 11) then
-   sfx_pickup()
-   for i=1,5 do spark(coin.x,coin.y,p.vx/2+(2-rnd(4)),p.vy/2+(2-rnd(4)),7, 15) end
-   for i=1,5 do spark(coin.x,coin.y,p.vx/2+(2-rnd(4)),p.vy/2+(2-rnd(4)),10, 15) end
-   add(splode, make_splode(coin.x, coin.y))
-   del(coins, coin)
-   if (#coins > 50) then
-    sleep = 0
-   else
-    sleep = 1
-   end
-  end
- end
-end
-
-function collide_walls()
- -- hit right wall
- if (p.x > 119) then
-  sfx(1)
-  spark(126, p.y, -2, -2, 7)
-  spark(126, p.y, -2, 1, 7)
-  p.x = 119
-  p.vx =- (p.vx * 0.8) -- decay
-  camera(-1,0)
- end
- if (p.x < 8) then
-  sfx(1)
-  spark(2, p.y, 2, -2, 7)
-  spark(2, p.y, 2, 1, 7)
-  p.x = 8
-  p.vx =- (p.vx * 0.8)
-  camera(1,0)
- end
- -- hit ceiling
- if (p.y < 8) then
-  if (p.vy <- 1) then
-   sfx(1)
-   spark(p.x, 2, -2, 1, 11)
-   spark(p.x, 2, 2, 1, 11)
-   camera(0,1)
-  end
-  p.y = 8
-  p.vy =- (p.vy * 0.6)
- end
- -- hit the floor
- if (p.y > 117) then
-  if (p.vy > 1) then
-   sfx(2)
-   spark(p.x, 125, 3, -1, 10)
-   spark(p.x, 125, -3, -1, 10)
-   camera(0,-1)
-  end
-  p.y = 117
-  p.vy =- (p.vy * 0.6)
- end
 end
 -->8
 -- draw
@@ -246,127 +39,44 @@ function _draw()
 end
 
 function draw_attract()
- cls(2)
- draw_boundary()
- draw_player()
- color(15)
- print("\n\n       ★ finlayball! ★")
- print("\n    try to clear the screen.")
- color(7)
- print("\n   press up arrow \148 to start")
- color(flr(rnd(16)))
- if (paint) print "\n   paint mode"
- if (midas) print "\n   midas mode"
+ cls()
+ print('★')
+ draw_debug()
 end
 
-function draw_boundary()
- -- ceiling
- line(0,0,127,0,3)
- -- walls
- line(0,0,0,127,15)
- line(127,0,127,127,15)
- rectfill(0,125,127,127,9)
-end
-
-function draw_gameover()
- cls(2)
- foreach(stain, draw_stain)
- draw_boundary()
- color(15)
- print("\n\n    a winrar is you!")
- color(7)
- print("\n\n    your time: "..timer)
- color(15)
- print("\n\n    press \131 to restart")
-end
-
-function draw_play()
- cls(2)
- foreach(stain, draw_stain)
- foreach(coins, draw_coin)
- foreach(splode, draw_splode)
- -- particles
- for s in all(sparks) do
-  --pset(s.x, s.y, s.col)
-  line(s.px, s.py, s.x, s.y, s.col)
- end
- draw_boundary()
- draw_player()
-  -- reset the camera
- camera()
-end
-
-function draw_player()
- for i=1,#trail do
-  if (i == #trail) then
-   line(p.x, p.y, trail[i].x, trail[i].y, lut[i])
-  else
-   line(trail[i+1].x, trail[i+1].y, trail[i].x, trail[i].y, lut[i])
-   --circfill(trail[i+1].x, trail[i+1].y, 6, flr(rnd(15)))
+function draw_debug()
+ if #debug>0 then
+  color(7)
+  for i=1,#debug do
+   print(debug[i])
   end
  end
- circfill(p.x,p.y,rad,8)
- circfill(p.x+2,p.y-2,2,7)
- -- shadow
- line(p.x-3,125,p.x+3,125,0)
-end
-
-function draw_coin(c)
- spr(3+c.frame, c.x-4, c.y-4)
- --circ(c.x, c.y, 4, 0)
- -- shadow
- line(c.x-3, 125, c.x+2, 125, 0)
-end
-
-function draw_splode(s)
- circfill(s.x, s.y, 7, s.col)
-end
-
-function draw_stain(s)
- local c = s.col
- if (not paint) c = 1
- circfill(s.x, s.y, 7, c)
 end
 -->8
 -- sfx
-function sfx_pickup()
- sfx(flr(4+rnd(3)))
-end
+
 -->8
 -- maths
 function closer_than(a,b,d)
- dx = a.x - b.x
- dy = a.y - b.y
+ dx = a.x-b.x
+ dy = a.y-b.y
  -- fast check
- if abs(dx) < d and abs(dy) < d then
+ if abs(dx)<d and abs(dy)<d then
   -- precise check
-  if dx*dx + dy*dy < d*d then
+  if dx*dx+dy*dy<d*d then
    return true
   end  
  end
  return false
 end
 
--- look up table for trail
-lut = {8,9,15,10,7,12}
--->8
--- post_init
-update_funcs = {attract = update_attract, play = update_play, gameover = update_gameover}
-draw_funcs = {attract = draw_attract, play = draw_play, gameover = draw_gameover}
--->8
--- ideas for juice
-
--- size particles on age
--- rising ok!/nice! on pickup
 __gfx__
-000000000000000000000000000a7000000a70000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000aaa700000aa0000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0070070000000000000000000aaaaa7000aaa7000077770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0007700000000000000000000aaaaaa000aaaa000077770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0007700000000000000000000aaaaaa000aaaa0000a7770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000000000000009aaaaa0009aaa000097770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000000000000000000000009aaa00000aa000000a700000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000009a0000009a0000009a00000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __label__
 f333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333f
 f222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222f
@@ -498,12 +208,10 @@ f2222222222222222222222222222222222222222222222222222222222222222222222222222222
 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
 
 __sfx__
-000100000b3700e3701137014370173601a3601b3601d3501e3501e3501f3501f3501e3501e3401e3401e3401c34019340143300f3300d3300b32009320063200432002310013100131001310013000000000000
-000100001715017150171502c050171502505020050171501305001040171400104016130010300103014130010301213001430014200c1200242009120024200611005100031000110000000000000000000000
-0001000004470044700547006460064600846009450094500b4500d4500e45010450115501245013450154501644018440184401a4401c4401e4201e4202142023420244102541028400294002c4003040034400
-000100001062010620106201062010620106201062010620106201062010620106200f6200f6200e6200d6200d6200c6200c6200b6200a6100961008610076100661005610046100461002610016000160001600
-00080000355503a5503a5503a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
-00080000355503a550395503a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
-00080000355503a550385503a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
-001200001905019050190501a0501b0501c0501d0501f0502105024050260502705027050280502805029050290502905026050220501c05018050170501b050250502c0502f0502f0502e0502c0502905027050
-001100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100000b3000e3001130014300173001a3001b3001d3001e3001e3001f3001f3001e3001e3001e3001e3001c30019300143000f3000d3000b30009300063000430002300013000130001300013000000000000
+000100001710017100171002c000171002500020000171001300001000171000100016100010000100014100010001210001400014000c1000240009100024000610005100031000110000000000000000000000
+0001000004400044000540006400064000840009400094000b4000d4000e40010400115001240013400154001640018400184001a4001c4001e4001e4002140023400244002540028400294002c4003040034400
+000100001060010600106001060010600106001060010600106001060010600106000f6000f6000e6000d6000d6000c6000c6000b6000a6000960008600076000660005600046000460002600016000160001600
+00080000355003a5003a5003a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
+00080000355003a500395003a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
+00080000355003a500385003a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200

@@ -1,71 +1,88 @@
 pico-8 cartridge // http://www.pico-8.com
-version 41
+version 32
 __lua__
--- finlayball
+-- platformin'
 -- by air
 
+-- generic constants
+flag_solid = 0
+max_jumps = 2
+g = 0.2
 -- player
-p = {x=64, y=64}
-rad = 7
-accel = 0.5 -- upward thrust
--- animation
-coin_ticks=5
-sleep=0 -- in frames
--- general
-g = 0.2 -- gravity
-timer = 0
-start_coins=4
-coins = {}
-trail = {}
-sparks = {}
-splode = {}
-stain = {}
-state = "attract"
-midas = false
-paint = false
+instant_vx = 1.8
+instant_vy = 3
+drag_x = 0.85
+-- game specific constants
+num_mobs = 10
+mob_dragx = 0.99
 
-function make_coin()
- local coin = {x=0, y=0, frame=0, step=0}
- coin.frame = flr(rnd(3))
- coin.step = flr(rnd(coin_ticks))
- coin.x = 5+flr(rnd(118))
- coin.y = 5+flr(rnd(118))
- return coin
+function _init()
+ reset()
 end
 
-function make_splode(x,y)
- local splode = {frame=0, step=0}
- splode.col = 0 -- start black
- splode.x = x
- splode.y = y
- return splode
-end
-
-function spark(x,y,vx,vy,col,lifetime)
- if (not lifetime) lifetime=10
- local s = {}
- s.x=x s.y=y s.vx=vx s.vy=vy s.col=col
- s.age=0
- s.limit=lifetime
- s.px=x s.py=y -- previous
- add(sparks,s)
-end
-
-function reset_game()
- p = {x=64, y=64, vx=0, vy=0}
+function reset()
+ -- basics
+ p = make_mover()
+ p.x = 64
+ p.y = 8*14
  timer = 0
- coins = {}
- trail = {}
- sparks = {}
- splode = {}
- stain = {}
- for c = 1,start_coins do
-  add(coins, make_coin())
+ sleep = 0
+ state = "play"
+ highlights = {}
+ mobs = {}
+ for i=1,num_mobs do
+  local m = make_mob()
+  add(mobs,m)
  end
+ -- platformer
+ p.jumps = max_jumps
+end
+
+function make_mob()
+ local m = make_mover()
+ m.spr = 17
+ local nogood = true
+ while (nogood) do
+  m.x = flr(rnd(16)) * 8
+  m.y = flr(rnd(16)) * 8
+  local spr = mget(m.x/8, m.y/8)
+  nogood = fget(spr,flag_solid)
+  if (not nogood) then
+   -- check with actual position
+   nogood = collide_mobs(m,m)
+  end
+ end
+ m.vx = rnd(30) - 15
+ m.vy = -rnd(8)
+ return m
+end
+
+function make_mover()
+ local a = {}
+ -- collider
+ a.width = 8
+ a.height = 8
+ -- actor
+ a.xsub = 0
+ a.ysub = 0
+ a.vx = 0
+ a.vy = 0
+ a.movex = movex -- function
+ a.movey = movey -- function
+ return a
+end
+
+-- unused
+function make_solid()
+ local s = {}
+ -- collider
+ s.width = 8
+ s.height = 8
+ return s
 end
 -->8
 -- update
-function _update()
+function _update60()
  if (sleep > 0) then
   sleep -= 1
  else
@@ -73,171 +90,66 @@ function _update()
  end
 end
 
-function update_attract()
- if (btnp(2)) then
-  reset_game()
-  state = "play"
+function collide_mobs(objid, pos)
+ if (objid != p) then
+  if (collide_aabb(pos,p)) return true
  end
- if (btnp(4)) then
-  if (midas) then
-   midas = false
-   start_coins = 4
-  else
-   midas = true
-   start_coins = 500
-  end
- end
- if (btnp(5)) then
-  if (paint) then
-   paint = false
-  else
-   paint = true
-  end
- end
-end
-
-function update_gameover()
- if (btn(3)) then
-  reset_game()
-  state = "attract"
- end
-end
-
-function update_play()
- timer += 1
- -- store player trail
- store_trail()
- -- animate things
- foreach(sparks, update_spark)
- foreach(coins, update_coin)
- foreach(splode, update_splode)
- -- press buttons
- if (btn(0)) p.vx -= accel
- if (btn(1)) p.vx += accel
- if (btn(2)) then
-  p.vy -= accel
-  sfx(3)
-  for i=1,5 do
-   spark(p.x+(3-rnd(5)),p.y+7+rnd(2),0.5-rnd(1),2+rnd(2),2+flr(rnd(14)))
-  end
- end
- if (btn(3)) p.vy += accel
- 
- p.vy += g
- p.x += p.vx
- p.y += p.vy
-
- spawn()
- collide_walls()
- collide_coins()
- if (#coins == 0) state="gameover"
-end
-
-function update_coin(c)
- c.step += 1
- if (c.step == coin_ticks) then
-  c.step = 0;
-  c.frame += 1;
-  if (c.frame == 3) c.frame = 0
- end
-end
-
-function update_splode(s)
- s.step += 1
- if (s.step > 0) s.col = 7
- if (s.step > 5) then
-  del(splode, s)
-  local c = 8
-  while (c==8 or c==10 or c==2 or c==7) do
-   c=2+flr(rnd(14))
-  end
-  add(stain, {x=s.x, y=s.y, col=c})
- end
-end
-
-function update_spark(s)
- s.age += 1
- if (s.age == s.limit) then
-  del(sparks,s)
-  return
- end
- s.px = s.x -- previous
- s.py = s.y
- s.vy += g -- gravity
- s.vx *= 0.99 -- decay vx
- s.x += s.vx
- s.y += s.vy
-end
-
-function store_trail()
- add(trail, {x=p.x, y=p.y})
- if (#trail == 6) del(trail, trail[1])
-end
-
-function spawn()
- if (timer % 30 == 0) then
-  add(coins, make_coin())
- end 
-end
-
-function collide_coins()
- for coin in all(coins) do
-  -- 11 is rad + sprite_width/2
-  if closer_than(p, coin, 11) then
-   sfx_pickup()
-   for i=1,5 do spark(coin.x,coin.y,p.vx/2+(2-rnd(4)),p.vy/2+(2-rnd(4)),7, 15) end
-   for i=1,5 do spark(coin.x,coin.y,p.vx/2+(2-rnd(4)),p.vy/2+(2-rnd(4)),10, 15) end
-   add(splode, make_splode(coin.x, coin.y))
-   del(coins, coin)
-   if (#coins > 50) then
-    sleep = 0
-   else
-    sleep = 1
+ for m in all(mobs) do
+  if (m != objid) then
+   if (collide_aabb(m,pos)) then
+    --add(highlights,m)
+    --add(highlights,pos)
+    return true
    end
   end
  end
 end
 
-function collide_walls()
- -- hit right wall
- if (p.x > 119) then
-  sfx(1)
-  spark(126, p.y, -2, -2, 7)
-  spark(126, p.y, -2, 1, 7)
-  p.x = 119
-  p.vx =- (p.vx * 0.8) -- decay
-  camera(-1,0)
- end
- if (p.x < 8) then
-  sfx(1)
-  spark(2, p.y, 2, -2, 7)
-  spark(2, p.y, 2, 1, 7)
-  p.x = 8
-  p.vx =- (p.vx * 0.8)
-  camera(1,0)
- end
- -- hit ceiling
- if (p.y < 8) then
-  if (p.vy <- 1) then
-   sfx(1)
-   spark(p.x, 2, -2, 1, 11)
-   spark(p.x, 2, 2, 1, 11)
-   camera(0,1)
+function buttons()
+ if (btn(0)) p.vx = -instant_vx
+ if (btn(1)) p.vx = instant_vx
+ if (btnp(2) or btnp(4)) then
+  if (p.jumps > 0) then
+   p.vy = -instant_vy
+   p.jumps -= 1
+   sfx_jump()
   end
-  p.y = 8
-  p.vy =- (p.vy * 0.6)
  end
- -- hit the floor
- if (p.y > 117) then
-  if (p.vy > 1) then
-   sfx(2)
-   spark(p.x, 125, 3, -1, 10)
-   spark(p.x, 125, -3, -1, 10)
-   camera(0,-1)
+end
+
+function do_mobs()
+ for m in all(mobs) do
+  m.vx *= mob_dragx
+  m.vy += g
+  m:movex(m.vx, function(self)
+    self.vx = -self.vx * 0.8
+   end
+  )
+  m:movey(m.vy, function(self)
+    self.vy = -self.vy * 0.8
+   end
+  )
+ end
+end
+
+function update_play()
+ do_mobs()
+ buttons()
+ p.vx *= drag_x
+ p.vy += g
+ p:movex(p.vx, function(self)
+   sfx_bump()
+   self.vx = -self.vx * 0.1
   end
-  p.y = 117
-  p.vy =- (p.vy * 0.6)
- end
+ )
+ p:movey(p.vy, function(self)
+   self.vy = 0
+   self.jumps = max_jumps
+  end
+ )
+end
+
+function update_attract()
 end
 -->8
 -- draw
@@ -245,95 +157,110 @@ function _draw()
  draw_funcs[state]()
 end
 
-function draw_attract()
- cls(2)
- draw_boundary()
- draw_player()
- color(15)
- print("\n\n       ★ finlayball! ★")
- print("\n    try to clear the screen.")
+-- h.x, y, width, height
+function highlight(h)
  color(7)
- print("\n   press up arrow \148 to start")
- color(flr(rnd(16)))
- if (paint) print "\n   paint mode"
- if (midas) print "\n   midas mode"
+ rect(h.x,h.y,h.x+h.width-1,h.y+h.height-1)
 end
 
-function draw_boundary()
- -- ceiling
- line(0,0,127,0,3)
- -- walls
- line(0,0,0,127,15)
- line(127,0,127,127,15)
- rectfill(0,125,127,127,9)
-end
-
-function draw_gameover()
- cls(2)
- foreach(stain, draw_stain)
- draw_boundary()
- color(15)
- print("\n\n    a winrar is you!")
+function debug()
  color(7)
- print("\n\n    your time: "..timer)
- color(15)
- print("\n\n    press \131 to restart")
+ print("cpu "..stat(1))
+ --print(p.x..","..p.y)
+ --print(p.vx..","..p.vy)
+ --print("jumps "..p.jumps)
+ --print("xsub:"..p.xsub)
+ --print("ysub:"..p.ysub)
+ --local ts = collidable_tiles(p)
+ --print("tiles: "..#ts)
+ --for t in all(ts) do
+ -- print("tile "..t[1]..","..t[2])
+ --end
+ for h in all(highlights) do
+  highlight(h)
+ end
+ highlights = {}
 end
 
 function draw_play()
- cls(2)
- foreach(stain, draw_stain)
- foreach(coins, draw_coin)
- foreach(splode, draw_splode)
- -- particles
- for s in all(sparks) do
-  --pset(s.x, s.y, s.col)
-  line(s.px, s.py, s.x, s.y, s.col)
+ cls()
+ map(0, 0, 0, 0, 16, 16)
+ for m in all(mobs) do
+  spr(m.spr, m.x, m.y)
  end
- draw_boundary()
- draw_player()
-  -- reset the camera
- camera()
+ spr(16, p.x, p.y)
+ debug()
 end
 
-function draw_player()
- for i=1,#trail do
-  if (i == #trail) then
-   line(p.x, p.y, trail[i].x, trail[i].y, lut[i])
-  else
-   line(trail[i+1].x, trail[i+1].y, trail[i].x, trail[i].y, lut[i])
-   --circfill(trail[i+1].x, trail[i+1].y, 6, flr(rnd(15)))
-  end
- end
- circfill(p.x,p.y,rad,8)
- circfill(p.x+2,p.y-2,2,7)
- -- shadow
- line(p.x-3,125,p.x+3,125,0)
+function draw_attract()
 end
 
-function draw_coin(c)
- spr(3+c.frame, c.x-4, c.y-4)
- --circ(c.x, c.y, 4, 0)
- -- shadow
- line(c.x-3, 125, c.x+2, 125, 0)
-end
-
-function draw_splode(s)
- circfill(s.x, s.y, 7, s.col)
-end
-
-function draw_stain(s)
- local c = s.col
- if (not paint) c = 1
- circfill(s.x, s.y, 7, c)
-end
 -->8
 -- sfx
-function sfx_pickup()
- sfx(flr(4+rnd(3)))
+function sfx_bump()
+ sfx(1)
+end
+
+function sfx_jump()
+ sfx(2)
 end
 -->8
 -- maths
+
+-- original passes solids as param 1
+function tiles_at(x, y, width, height)
+ -- http://gamedev.docrobs.co.uk/first-steps-in-pico-8-easy-collisions-with-map-tiles
+ local tiles = collidable_tiles({x=x,y=y,width=width,height=height})
+ for t in all(tiles) do
+  local spr = mget(t[1],t[2])
+  if (fget(spr,flag_solid)) return true
+ end
+end
+
+-- c has x,y,width,height
+function collidable_tiles(c)
+ local tiles = {}
+ -- topleft corner
+ local tile = {flr(c.x/8), flr(c.y/8)}
+ add(tiles, tile)
+ -- topright
+ if ((c.x % 8) > 0) then
+  tile = {flr(c.x/8)+1, flr(c.y/8)}
+  add(tiles, tile)
+ end
+ -- bottomleft
+ if ((c.y % 8) > 0) then
+  tile = {flr(c.x/8), flr(c.y/8)+1}
+  add(tiles, tile)
+ end
+ -- bottomright
+ if ((c.x % 8) > 0 and (c.y % 8) > 0) then
+  tile = {flr(c.x/8)+1, flr(c.y/8)+1}
+  add(tiles, tile)
+ end
+ --for t in all(tiles) do
+ -- add(highlights, {x=t[1]*8,y=t[2]*8,width=8,height=8})
+ --end
+ return tiles
+end
+
+function round(n)
+ return flr(n+0.5)
+end
+
+function sign(n)
+ if (n>0) return 1
+ if (n<0) return -1
+ return 0
+end
+
+function collide_aabb(m,n)
+ return (m.x < n.x + n.width) and
+  (m.x + m.width > n.x) and
+  (m.y < n.y + n.height) and
+  (m.y + n.height > n.y)
+end
+
 function closer_than(a,b,d)
  dx = a.x - b.x
  dy = a.y - b.y
@@ -347,26 +274,85 @@ function closer_than(a,b,d)
  return false
 end
 
--- look up table for trail
-lut = {8,9,15,10,7,12}
 -->8
 -- post_init
-update_funcs = {attract = update_attract, play = update_play, gameover = update_gameover}
-draw_funcs = {attract = draw_attract, play = draw_play, gameover = draw_gameover}
--->8
--- ideas for juice
+update_funcs = {}
+update_funcs.attract = update_attract
+update_funcs.play = update_play
 
--- size particles on age
--- rising ok!/nice! on pickup
+draw_funcs = {}
+draw_funcs.attract = draw_attract
+draw_funcs.play = draw_play
+-->8
+-- composites
+
+function movex(self, amount, oncollide)
+ self.xsub += amount
+ local movepx = round(self.xsub)
+ -- move than 1/2 a pixel +/-?
+ if (movepx != 0) then
+  -- adjust subpixels by actual movement
+  self.xsub -= movepx
+  -- get direction, 1 or -1
+  local sign = sign(movepx)
+  -- make moves
+  while (movepx != 0) do
+   local newpos = {x=self.x+sign, y=self.y, width=self.width, height=self.height}
+   if (tiles_at(self.x+sign, self.y, self.width, self.height) or collide_mobs(self,newpos)) then
+    -- collision
+    if (oncollide) oncollide(self)
+    return
+   else
+    -- no collision
+    self.x += sign -- move 1
+    movepx -= sign -- 1 is done
+   end
+  end
+ end
+end
+
+function movey(self, amount, oncollide)
+ self.ysub += amount
+ local movepx = round(self.ysub)
+ -- move than 1/2 a pixel +/-?
+ if (movepx != 0) then
+  -- adjust subpixels by actual movement
+  self.ysub -= movepx
+  -- get direction, 1 or -1
+  local sign = sign(movepx)
+  -- make moves
+  while (movepx != 0) do
+   local newpos = {x=self.x, y=self.y+sign, width=self.width, height=self.height}
+   if (tiles_at(self.x, self.y+sign, self.width, self.height) or collide_mobs(self,newpos)) then
+    -- collision
+    if (oncollide) oncollide(self)
+    return
+   else
+    -- no collision
+    self.y += sign -- move 1
+    movepx -= sign -- 1 is done
+   end
+  end
+ end
+end
+
 __gfx__
-000000000000000000000000000a7000000a70000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000aaa700000aa0000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0070070000000000000000000aaaaa7000aaa7000077770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0007700000000000000000000aaaaaa000aaaa000077770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0007700000000000000000000aaaaaa000aaaa0000a7770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000000000000009aaaaa0009aaa000097770000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000000000000000000000009aaa00000aa000000a700000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000009a0000009a0000009a00000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000066666600666666005050500050505000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000006dddddd56dddddd555555550555555500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+007007006dddddd56d55ddd505555550055555500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000770006dddddd56d56ddd555555550555d55500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000770006dddddd56ddd56d50555555005555d500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+007007006dddddd56ddd66d5555555505555dd500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000006dddddd56dddddd505555550055555500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000055555500555555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700600003333000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00500500037333300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00076000333333330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0066c600333333330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000d5000333333330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00e55e00333333350000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e0200208033333500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+8800008e005555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __label__
 f333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333f
 f222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222f
@@ -497,6 +483,26 @@ f2222222222222222222222222222222222222222222222222222222222222222222222222222222
 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
 
+__gff__
+0001010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__map__
+0201010101010101010101010101010200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303030303030303030303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303030303030303030303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303040404040303030303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0102020202030202020203020203030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303030303030302020303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030101010303030303030403030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030403030303030301030202020100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030404040303030303030303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303030303030303030101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303030303030303030403030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303030303030103030403030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303010103030303030303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0101010303040404030303030303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0103030303030303030303030303030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0201010101010101010101010101010200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000100000b3700e3701137014370173601a3601b3601d3501e3501e3501f3501f3501e3501e3401e3401e3401c34019340143300f3300d3300b32009320063200432002310013100131001310013000000000000
 000100001715017150171502c050171502505020050171501305001040171400104016130010300103014130010301213001430014200c1200242009120024200611005100031000110000000000000000000000
@@ -505,5 +511,3 @@ __sfx__
 00080000355503a5503a5503a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
 00080000355503a550395503a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
 00080000355503a550385503a4003b0001f00013100101000b10030100301000110009100091000810004100021002f1002e1002e1002e1002d1002d1002d1002d1002d1002c2002e2002f200312003320033200
-001200001905019050190501a0501b0501c0501d0501f0502105024050260502705027050280502805029050290502905026050220501c05018050170501b050250502c0502f0502f0502e0502c0502905027050
-001100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
